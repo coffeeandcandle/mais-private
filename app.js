@@ -1,11 +1,21 @@
 import {seed,calculate,money,cents,validate,forecast,quarters,includeOverdraft} from './budget.js';
+import * as sync from './sync.js';
 const $=s=>document.querySelector(s),escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let state={version:1,months:{'2026-11':seed(),'2026-12':seed('2026-12')}},view='overview',month='2026-11',storageFailed=false;
-try{const raw=localStorage.getItem('mais-budget');if(raw)state=validate(JSON.parse(raw));}catch{storageFailed=true;}
+let state={version:1,months:{'2026-11':seed(),'2026-12':seed('2026-12')}},view='overview',month='2026-11',storageFailed=false,hadLocal=false;
+try{const raw=localStorage.getItem('mais-budget');if(raw){state=validate(JSON.parse(raw));hadLocal=true;}}catch{storageFailed=true;}
 includeOverdraft(state);
+function adopt(next){try{state=includeOverdraft(validate(next));if(!state.months[month])month=Object.keys(state.months)[0];$('#month').value=month;try{localStorage.setItem('mais-budget',JSON.stringify(state));}catch{}render();return true;}catch{return false;}}
+function report(kind,next){
+ if(kind==='synced')message('Saved and synced to your other devices.');
+ else if(kind==='conflict'){if(adopt(next))message('A newer budget from another device was loaded.');}
+ else if(kind==='unauthorized')message('Cloud saving needs you to lock and unlock again.');
+ else message('Saved on this device. Cloud saving will retry when you are back online.');
+}
+const boot=await sync.start(hadLocal,()=>state,report);
+if(boot.state){try{state=includeOverdraft(validate(boot.state));}catch{}}
 const budget=()=>state.months[month];
 function message(text){$('#notice').textContent=text;}
-function save(){try{localStorage.setItem('mais-budget',JSON.stringify(state));message('Saved on this device.');}catch{message('Browser storage is unavailable. Export a backup to keep your changes.');}render();}
+function save(){try{localStorage.setItem('mais-budget',JSON.stringify(state));message('Saved on this device.');sync.save(()=>state,report);}catch{message('Browser storage is unavailable. Export a backup to keep your changes.');}render();}
 const priorities=['','1 · Essentials','2 · Education & commitments','3 · Bills & repayments','4 · Flexible spending'];
 function render(){
  const b=budget(),c=calculate(b);document.querySelectorAll('[data-view]').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
@@ -47,4 +57,7 @@ $('nav').onclick=e=>{if(e.target.dataset.view){view=e.target.dataset.view;render
 $('#export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='mais-budget-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('#import').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>2000000)throw Error('Backup is too large.');const next=validate(JSON.parse(await file.text()));if(confirm('Replace the budget on this device with this backup?')){state=includeOverdraft(next);month=Object.keys(state.months)[0];$('#month').value=month;save();}}catch(err){message('Could not import: '+err.message);}e.target.value='';};
 $('#print').onclick=()=>window.print();
-render();if(storageFailed)message('Could not load a saved budget. Import a backup or export before leaving this page.');
+render();if(boot.note==='offline')message('Could not reach cloud saving. Showing the copy saved on this device.');else if(boot.note==='unauthorized')message('Cloud saving needs you to lock and unlock again.');
+document.addEventListener('visibilitychange',async()=>{if(document.visibilityState!=='visible')return;const next=await sync.refresh();if(next&&adopt(next))message('Updated with the latest budget from your other device.');else sync.retry(()=>state,report);});
+addEventListener('online',()=>sync.retry(()=>state,report));
+if(storageFailed)message('Could not load a saved budget. Import a backup or export before leaving this page.');

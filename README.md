@@ -1,6 +1,6 @@
 # Mais budget
 
-A private, responsive budget dashboard for phone, iPad and desktop. No account or sign-in is required. All budget data is stored in the browser's local storage. There is no backend, bank integration, analytics or automatic cross-device sync.
+A private, responsive budget dashboard for phone, iPad and desktop. No account or sign-in is required. All budget data is stored in the browser's local storage. There is no bank integration or analytics. When deployed with a password and a Vercel Blob store, the budget syncs between your devices (see Cloud saving).
 
 ## Run
 
@@ -44,3 +44,11 @@ The app is a budgeting tool. Projected income is not a payment-date cash-flow gu
 ## Vercel deployment
 
 Import `coffeeandcandle/mais-private` into Vercel and select the `main` branch. The checked-in `vercel.json` builds only the six public app files into `dist/`. No environment variables are required. Alternatively run `vercel --prod` from the checkout with an authenticated Vercel CLI. Keep the deployment URL consistent: browser-saved budgets belong to that exact origin and do not move automatically to another deployment URL.
+
+## Password lock
+
+The app opens on a password screen. Only a salted PBKDF2 hash of the password is stored, in `lock-config.js`. To set or change it run `node scripts/set-password.js <password>`, commit and push; use `--off` to remove the lock. This is a screen lock in the browser: it keeps casual visitors out but the app files themselves are static. Changing the password also changes the key that encrypts cloud saves, so export a backup first and import it afterwards.
+
+## Cloud saving
+
+With the lock on and a private Vercel Blob store connected to the project (Storage → Connect Project, which adds `BLOB_READ_WRITE_TOKEN`), every save is encrypted in the browser with a key derived from your password and stored through `/api/budget`. The server checks the password before reading or writing and stores only encrypted data. After unlocking, a device loads the newest copy, and returning to the tab refreshes it. This is built for one person: if two devices change the budget separately, the newer upload wins and the other device is told it loaded a newer copy. If you are offline, changes stay on the device and upload when you are back online.
